@@ -8,7 +8,8 @@ const fs = require('fs');
 const ytdl = require('ytdl-core');
 const NodeID3 = require('node-id3');
 const ffmpeg = require('fluent-ffmpeg');
-const request = require('request')
+const request = require('request');
+const downloadQueue = [];
 
 //
 // Variables & Constants
@@ -215,8 +216,16 @@ function ipcRequests() {
         if (!mainWindow.downloading)
             mainWindow.setProgressBar(value / max);
     });
-    ipcMain.on("music:downloads", () => {
-        return createDownloadsWindow();
+    ipcMain.on("web:tabButtonClick", (tabButtonName) => {
+        switch (tabButtonName.toLowerCase()) {
+            case "downloads":
+                createDownloadsWindow();
+                break;
+            default:
+                console.log("! Unknown tab button. Please set click event. (" + tabButtonName + ")")
+                break;
+        }
+        return;
         let downloadsArray = [];
 
         let downloadsDir = path.join(__dirname, "dl");
@@ -263,46 +272,64 @@ function ipcRequests() {
             //await mainWindow.loadURL("https://music.youtube.com/");
         });
     });
-    ipcMain.on("music:download", (err, data) => {
-        let { url, title, artist, album, imgURL, thumbURL, year } = data;
+    ipcMain.on("music:download", (err, dataSong) => {
+        const { videoURL, videoID, title, artist, album, imgURL, thumbURL, year } = dataSong;
 
-        let videoID = ytdl.getURLVideoID(url);
+        if (!videoID)
+            videoID = ytdl.getURLVideoID(videoURL);
 
         if (!ytdl.validateID(videoID))
             return; // TODO Alert to webpage: "invalid youtube music/video"
 
         ytdl.getInfo("https://youtube.com/watch?v=" + videoID, {}, (err, info) => {
-            let videoDetails = info.player_response.videoDetails;
-            //let keywords = videoDetails.keywords;
-            //let title = videoDetails.title;
-            //let artist = videoDetails.author.replace(" - Topic", "").replace(" - Konu", "");
-            //let imgURL = videoDetails.thumbnail.thumbnails[videoDetails.thumbnail.thumbnails.length - 1].url;
-            let time = videoDetails.lengthSeconds;
-            var img;
+            
+            let downloadPath = path.join(__dirname, "dl");
 
-            console.log('Requesting cover photo..');
+            fs.mkdir(downloadPath, () => {
+                let stream = ytdl(videoID, {
+                    quality: 'highestaudio',
+                });
+
+                dataSong["time"] = info.player_response.videoDetails.lengthSeconds;
+
+                downloadQueue.push({data:dataSong,stream:stream})
+            })
+
+        });
+
+    });
+}
+
+let queueBusy = false;
+setInterval(() => {
+    if (queueBusy || downloadQueue.length == 0)
+        return
+
+    queueBusy = true;
+    let { data, stream } = downloadQueue[0]
+    let { videoURL, videoID, title, artist, album, imgURL, thumbURL, year, time } = data;
+    let fileName = `${artist} - ${title}`;
+    let downloadPath = path.join(__dirname, "dl");
+    let filePath = path.join(downloadPath, `${fileName}.mp3`);
+    console.log("QUEUE:  DOWNLOADING => " + fileName);
+
+    let img;
+    console.log('Requesting cover photo..');
+    request({
+        url: imgURL,
+        method: "get",
+        encoding: null
+    }, function (error, response, body) {
+        if (error) {
+            console.log("Error while getting cover photo.")
+            console.log('Requesting thumbnail photo..');
             request({
-                url: imgURL,
+                url: thumbURL,
                 method: "get",
                 encoding: null
             }, function (error, response, body) {
                 if (error) {
-                    console.log("Error while getting cover photo.")
-                    console.log('Requesting thumbnail photo..');
-                    request({
-                        url: thumbURL,
-                        method: "get",
-                        encoding: null
-                    }, function (error, response, body) {
-                        if (error) {
-                            console.error('image error: ', error);
-                        } else {
-                            console.log('Response: StatusCode:', response && response.statusCode);
-                            console.log('Response: Body: Length: %d. Is buffer: %s', body.length, (body instanceof Buffer));
-                            //fs.writeFileSync('last.jpg', body);
-                            img = body;
-                        }
-                    });
+                    console.error('image error: ', error);
                 } else {
                     console.log('Response: StatusCode:', response && response.statusCode);
                     console.log('Response: Body: Length: %d. Is buffer: %s', body.length, (body instanceof Buffer));
@@ -310,59 +337,56 @@ function ipcRequests() {
                     img = body;
                 }
             });
-
-            let fileName = `${artist} - ${title}`;
-
-            let downloadPath = path.join(__dirname, "dl");
-            let filePath = path.join(downloadPath, `${fileName}.mp3`);
-
-            fs.mkdir(downloadPath, () => {
-                let stream = ytdl(videoID, {
-                    quality: 'highestaudio',
-                });
-
-                let startTime = Date.now();
-                ffmpeg(stream)
-                    .audioBitrate(256)
-                    .save(filePath)
-                    .on('progress', (p) => {
-                        mainWindow.webContents.send("music:downloadProgress", { videoID: videoID, title: title, artist: artist });
-                        let currentTime = new Date("0." + p.timemark.toString());
-                        let current = currentTime.getHours() * 3600 + currentTime.getMinutes() * 60 + currentTime.getSeconds();
-                        console.log(`${fileName} - downloaded: ${p.targetSize} kb - ${(current / time) * 100}%`);
-                        mainWindow.downloading = true;
-                        mainWindow.setOverlayIcon(path.join(__dirname, "assets", 'img', "download.png"), 'Downloading...')
-                        mainWindow.setProgressBar(current / time);
-                    })
-                    .on('end', (err, data) => {
-                        mainWindow.webContents.send("music:downloadEnd", { videoID: videoID, title: title, artist: artist });
-                        mainWindow.setOverlayIcon(null, ''); // Clear overlay icon.
-                        mainWindow.downloading = false;
-                        console.log("=> downloaded succesfully:   " + fileName)
-                        console.log(`\ndone in ${(Date.now() - startTime) / 1000}s`);
-                        let tags = {
-                            title: title,
-                            artist: artist,
-                            album: album,
-                            APIC: img,
-                            conductor: artist,
-                            remixArtist: artist,
-                            publisher: artist,
-                            year: year
-                        }
-
-                        if (NodeID3.write(tags, file))
-                            console.log("mp3 information included")
-                        else
-                            console.log("information include error")
-                    });
-
-            })
-
-        });
-
+        } else {
+            console.log('Response: StatusCode:', response && response.statusCode);
+            console.log('Response: Body: Length: %d. Is buffer: %s', body.length, (body instanceof Buffer));
+            //fs.writeFileSync('last.jpg', body);
+            img = body;
+        }
     });
-}
+
+    mainWindow.webContents.send("music:downloadProgress", data);
+    mainWindow.setOverlayIcon(path.join(__dirname, "assets", 'img', "download.png"), 'Downloading...')
+    let startTime = Date.now();
+    ffmpeg(stream)
+        .audioBitrate(256)
+        .save(filePath)
+        .on('progress', (p) => {
+            console.log("progressing => " + fileName)
+            let currentTime = new Date("0." + p.timemark.toString());
+            let current = currentTime.getHours() * 3600 + currentTime.getMinutes() * 60 + currentTime.getSeconds();
+            console.log(`${fileName} - downloaded: ${p.targetSize} kb - ${(current / time) * 100}%`);
+            mainWindow.downloading = true;
+            mainWindow.setProgressBar(current / time);
+        })
+        .on('end', (err, data2) => {
+            mainWindow.webContents.send("music:downloadEnd", videoID);
+            mainWindow.setOverlayIcon(null, ''); // Clear overlay icon.
+            mainWindow.downloading = false;
+            console.log("=> downloaded succesfully:   " + fileName)
+            console.log(`\ndone in ${(Date.now() - startTime) / 1000}s`);
+            let tags = {
+                title: title,
+                artist: artist,
+                album: album,
+                APIC: img,
+                conductor: artist,
+                remixArtist: artist,
+                publisher: artist,
+                year: year
+            }
+
+            if (NodeID3.write(tags, filePath))
+                console.log("mp3 information included")
+            else
+                console.log("information include error")
+
+            setTimeout(async () => {
+                downloadQueue.shift()
+                queueBusy = false;
+            }, 5000);
+        });
+}, 1000);
 
 function mainJS() {
     return `
@@ -372,7 +396,7 @@ function mainJS() {
     //
     // Draggable Form
     //
-    var styles = \`
+    var draggableFormCSS = \`
         ytmusic-nav-bar[slot="nav-bar"] { 
             -webkit-app-region: drag;
         }
@@ -391,47 +415,41 @@ function mainJS() {
     \`
     var styleSheet = document.createElement("style");
     styleSheet.type = "text/css";
-    styleSheet.innerText = styles;
+    styleSheet.innerText = draggableFormCSS;
     document.head.appendChild(styleSheet);
 
     //
-    // Progress Bar
+    // Progress of Current Music/Video
     //
     let intProgress = setInterval(() => {        
         let data = {
-            value: document.getElementById('progress-bar').value,
-            max: document.getElementById('progress-bar').getAttribute('aria-valuemax')
+            value: document.querySelector('#progress-bar').value,
+            max: document.querySelector('#progress-bar').getAttribute('aria-valuemax')
         };
         ipcRenderer.send("music:progress",data);
     }, 500);
 
     //
-    // Title Bar
+    // Custom Tab Buttons
     //
-    //const ElectronTitlebarWindows = require('electron-titlebar-windows');
-    //const titlebar = new ElectronTitlebarWindows();
-    //titlebar.appendTo();
+    createTabButton("Downloads");
 
-    //
-    // Tabs
-    //
-    let a = document.createElement("ytmusic-pivot-bar-item-renderer");
-    a.setAttribute("onclick","ipcRenderer.send('music:downloads',window.location.href);");
-    a.setAttribute("class","style-scope ytmusic-pivot-bar-renderer");
-    a.setAttribute("tab-id","FEmusic_downloads");
-    a.setAttribute("role","tab");
-
-    let b = document.createElement("yt-formatted-string");
-    b.setAttribute("class","tab-title style-scope ytmusic-pivot-bar-item-renderer");
-
-    let c = document.createElement("span");
-    c.setAttribute("class","style-scope yt-formatted-string");
-    c.setAttribute("dir","auto");
-    c.innerText = "Downloads";
-
-    a.appendChild(b);
-    document.querySelector("ytmusic-pivot-bar-renderer").appendChild(a);
-    b.appendChild(c);
+    function createTabButton(name) {
+        let a = document.createElement("ytmusic-pivot-bar-item-renderer");
+        a.setAttribute("onclick","ipcRenderer.send('web:tabButtonClick',name);");
+        a.setAttribute("class","style-scope ytmusic-pivot-bar-renderer");
+        a.setAttribute("tab-id","FEmusic_" + name.toLowerCase());
+        a.setAttribute("role","tab");
+        let b = document.createElement("yt-formatted-string");
+        b.setAttribute("class","tab-title style-scope ytmusic-pivot-bar-item-renderer");
+        let c = document.createElement("span");
+        c.setAttribute("class","style-scope yt-formatted-string");
+        c.setAttribute("dir","auto");
+        c.innerText = name;
+        document.querySelector("ytmusic-pivot-bar-renderer").appendChild(a);
+        a.appendChild(b);
+        b.appendChild(c);
+    }
 
     //
     // Buttons on page
@@ -441,32 +459,37 @@ function mainJS() {
     var intCurrentMusicInfo = setInterval(()=>{
         let currentTitle = document.querySelector(".title.style-scope.ytmusic-player-bar.complex-string").getAttribute("title");
         let currentArtist = document.querySelector(".byline.style-scope.ytmusic-player-bar.complex-string").getAttribute("title").split(" • ")[0];
-        let currentVideoID = window.location.href.split('&')[0].split('=')[1];
-
+        let currentVideoID = null;
+        try {
+            currentVideoID = document.querySelector(".ytp-title-link.yt-uix-sessionlink").getAttribute("href").split('v=')[1].split('&')[0];
+        } catch (error) {
+            currentVideoID = null;
+        }
+        let downloadButton = document.querySelector("mp3-download>paper-icon-button");
         if (!downloadedMusics[currentVideoID]) {
             // Not downloading
-            document.querySelector("mp3-download>paper-icon-button").setAttribute("src","https://image.flaticon.com/icons/svg/2200/2200178.svg");
-            document.querySelector("mp3-download>paper-icon-button").disabled = false;
+            downloadButton.setAttribute("src","https://image.flaticon.com/icons/svg/2200/2200178.svg");
+            downloadButton.disabled = false;
         }
         if (downloadedMusics[currentVideoID] && downloadedMusics[currentVideoID].downloading) {
             // Downloading
-            document.querySelector("mp3-download>paper-icon-button").setAttribute("src","https://i.hizliresim.com/bv1j4G.gif");
-            document.querySelector("mp3-download>paper-icon-button").disabled = true;
+            downloadButton.setAttribute("src","https://i.hizliresim.com/bv1j4G.gif");
+            downloadButton.disabled = true;
         }
         if (downloadedMusics[currentVideoID] && !downloadedMusics[currentVideoID].downloading) {
             // Preparing
-            document.querySelector("mp3-download>paper-icon-button").setAttribute("src","https://loading.io/spinners/message/lg.messenger-typing-preloader.gif");
-            document.querySelector("mp3-download>paper-icon-button").disabled = true;
+            downloadButton.setAttribute("src","https://loading.io/spinners/message/lg.messenger-typing-preloader.gif");
+            downloadButton.disabled = true;
         } 
 
         // TODO müzik alta gönderilince bozuluyor indirilirken gösteriyo. preparing takılı kalıyo müzikte. delete olmamış
     },1000);
 
-    ipcRenderer.on("music:downloadProgress", (data)=>{
+    ipcRenderer.on("music:downloadProgress", (err, data) => {
         downloadedMusics[data.videoID] = {downloading:true,title:data.title,artist:data.artist};
     });
-    ipcRenderer.on("music:downloadEnd", (data)=>{
-        delete downloadedMusics[data.videoID];
+    ipcRenderer.on("music:downloadEnd", (err, videoID)=>{
+        downloadedMusics[videoID] = undefined;
 
         // TODO Download completed notification.
     });
@@ -478,12 +501,18 @@ function mainJS() {
         let year = info[2];
         let imgURL = document.querySelector("#thumbnail>#img").getAttribute("src");
         let thumbURL = document.querySelector(".image.style-scope.ytmusic-player-bar").getAttribute("src");
-        let currentVideoID = window.location.href.split('&')[0].split('=')[1];
-
+        let currentVideoID = null;
+        try {
+            currentVideoID = document.querySelector(".ytp-title-link.yt-uix-sessionlink").getAttribute("href").split('v=')[1].split('&')[0];
+        } catch (error) {
+            currentVideoID = null;
+        }
+        console.log("download starting: " + currentVideoID)
         downloadedMusics[currentVideoID] = {downloading:false,title:title,artist:artist};
 
         let data = {
-            url: window.location.href,
+            videoURL: window.location.href,
+            videoID: currentVideoID,
             title: title,
             artist: artist,
             album: album,
@@ -491,6 +520,7 @@ function mainJS() {
             thumbURL: thumbURL,
             year: year
         };
+        console.log(data)
         ipcRenderer.send("music:download",data);
     }
     let mp3Download = document.createElement('mp3-download');

@@ -1,7 +1,7 @@
 {
     "name": "youtubemusic-desktop",
     "productName": "YouTube Music",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "description": "YouTube Music - Unofficial Desktop App",
     "main": "main.js",
     "scripts": {
