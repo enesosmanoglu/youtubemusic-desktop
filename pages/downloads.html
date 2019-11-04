@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Get percentage loaded from image</title>
+  <script type="text/javascript">
+    Image.prototype.onChangeSize;
+    Image.prototype.load = function(url){
+        var _this = this,
+            req   = ((XMLHttpRequest) ? new XMLHttpRequest() : new ActiveXObject("Microsoft.XMLHTTP"));
+        req.open('GET', url, true);
+        req.responseType = 'arraybuffer';
+        req.onload = function(e) {
+          if(req.response) {
+            var blob = new Blob([req.response]);
+            _this.src = window.URL.createObjectURL(blob);
+          }
+        }
+        req.onprogress = function(e) {
+          if(_this.onChangeSize) {
+            _this.onChangeSize(e.loaded, e.total);
+          }
+        }
+        req.send();
+    }
+    var img = new Image();
+    img.onChangeSize = function(loaded, total) {
+      var _l = parseInt((loaded / total) * 100),
+          loadSpan = document.getElementById('data-loaded');
+      console.log(loaded + " of " + total);
+      loadSpan.innerHTML = '<img src="https://i.hizliresim.com/bv1j4G.gif" width=\'' + _l + 'px\'>';
+    }
+    img.onload = function() {
+      //document.getElementById('data-loaded').style.display = 'none';
+      //document.getElementsByTagName('body')[0].style.background = 'url(' + img.src + ')';
+    }
+    img.load('https://i.hizliresim.com/bv1j4G.gif');
+  </script>
+</head>
+<body>
+  <span id="data-loaded"></span>
+</body>
+</html>

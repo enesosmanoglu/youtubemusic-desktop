@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <style>
+        /* Define the main wrapper style */
+        body {
+            pointer-events: none;
+        }
+
+        .loading {
+            max-width: 70%;
+            max-height: 70%;
+            height: auto;
+            width: auto\9;
+            /* ie8 */
+        }
+
+        #loading {
+            font-size: 2vw;
+            height: auto;
+            width: auto\9;
+            /* ie8 */
+        }
+
+        .asd {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+        }
+    </style>
+    <link rel="stylesheet" href="../assets/bootstrap.min.css">
+</head>
+
+<body style="-webkit-app-region: drag">
+    
+    <div class="asd">
+        <div class="text-center">
+            <img src="../assets/loading.gif" alt="Loading..." class="loading">
+            <h1 class="text-center" id="loading">Loading...</h1>
+        </div>
+    </div>
+
+
+
+    <script>
+        // You can also require other files to run in this process
+        let i = 0;
+        let text = setInterval(() => {
+            document.getElementById('loading').innerText = "Loading" + ".".repeat(i++);
+            if (i == 4) i = 0;
+        }, 1000);
+    </script>
+</body>
+
+</html>
