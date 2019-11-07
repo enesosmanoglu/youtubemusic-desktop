@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>YouTube Music - Update App</title>
+    <link rel="stylesheet" href="../css/bootstrap.min.css">
+    <style>
+        body {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 5vh;
+        }
+        .loading {
+            max-width: 70%;
+            max-height: 70%;
+            height: auto;
+            width: auto\9;
+            /* ie8 */
+        }
+    </style>
+</head>
+
+<body>
+    <div class="asd">
+        <div class="text-center">
+            <img src="../img/youtube-music.gif" alt="Loading..." class="loading">
+            <h1 id="status">Checking for updates...</h1>
+        </div>
+    </div>
+    <script>
+        let i = 0;
+        intStatus = setInterval(() => {
+            if (!document.querySelector("#status").innerText.includes("Checking for updates")) {
+                return clearInterval(intStatus);
+            }
+                
+            document.querySelector("#status").innerText = "Checking for updates" + ".".repeat(i++);
+            if (i == 4) i = 0;
+        }, 500);
+
+        const electron = require("electron");
+        const { ipcRenderer } = electron;
+        const bytes = require('bytes');
+
+        ipcRenderer.on("status:update", (err, data) => {
+            /*
+            {
+                time: { elapsed: 46.072, remaining: 30.626 },
+                speed: 164280.27869421773,
+                percent: 0.600692762619517,
+                size: { total: 12599987, transferred: 7568721 }
+            }
+            */
+            if (!data.percent) {
+                document.querySelector(".loading").hidden = false;
+                document.querySelector("#status").innerText = data;
+            }
+            else {
+                document.querySelector(".loading").hidden = true;
+                document.querySelector("#status").innerText = `${parseInt(data.percent * 100)}%
+                Downloading... 
+                ( ${bytes(data.size.transferred, { unitSeparator: ' ' })} / ${bytes(data.size.total, { unitSeparator: ' ' })} )
+
+                Elapsed time: ${parseInt(data.time.elapsed)} s
+                Remaining time: ${parseInt(data.time.remaining)} s
+                Download speed: ${bytes(data.speed, { unitSeparator: ' ' })}/s
+                `;
+            }
+
+        })
+    </script>
+</body>
+
+</html>

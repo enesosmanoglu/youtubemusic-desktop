@@ -1,7 +1,7 @@
 {
     "name": "youtubemusic-desktop",
     "productName": "YouTube Music",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "description": "YouTube Music - Unofficial Desktop App",
     "main": "main.js",
     "scripts": {
@@ -14,9 +14,16 @@
         "electron-packager": "^14.1.0"
     },
     "dependencies": {
+        "@cliqz/adblocker-electron": "^1.3.1",
+        "bytes": "^3.1.0",
+        "cross-fetch": "^3.0.4",
         "fluent-ffmpeg": "^2.1.2",
+        "get-mp3-duration": "^1.0.0",
         "node-id3": "^0.1.11",
+        "remote-file-size": "^3.0.5",
         "request": "^2.88.0",
+        "request-progress": "^3.0.0",
+        "shelljs": "^0.8.3",
         "ytdl-core": "^1.0.0"
     }
 }

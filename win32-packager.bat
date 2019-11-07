@@ -1,1 +1,1 @@
-electron-packager . youtube-music --version-string.ProductName="YouTube Music" --overwrite --asar=true --platform=win32 --arch=ia32 --icon=assets\app.ico --prune=true --out=release-builds --version-string.CompanyName=CE --version-string.FileDescription=CE
+electron-packager . YouTube-Music --version-string.ProductName="YouTube Music" --overwrite --asar=true --platform=win32 --arch=ia32 --icon=app.ico --prune=true --out=release-builds --version-string.CompanyName=CE --version-string.FileDescription=CE
